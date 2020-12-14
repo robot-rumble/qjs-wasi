@@ -6422,23 +6422,24 @@ static int find_line_num(JSContext *ctx, JSFunctionBytecode *b,
 /* in order to avoid executing arbitrary code during the stack trace
    generation, we only look at simple 'name' properties containing a
    string. */
-static const char *get_func_name(JSContext *ctx, JSValueConst func)
+static JSValue get_func_name(JSContext *ctx, JSValueConst func)
 {
     JSProperty *pr;
     JSShapeProperty *prs;
     JSValueConst val;
     
     if (JS_VALUE_GET_TAG(func) != JS_TAG_OBJECT)
-        return NULL;
+        return JS_NULL;
     prs = find_own_property(&pr, JS_VALUE_GET_OBJ(func), JS_ATOM_name);
     if (!prs)
-        return NULL;
+        return JS_NULL;
     if ((prs->flags & JS_PROP_TMASK) != JS_PROP_NORMAL)
-        return NULL;
+        return JS_NULL;
     val = pr->u.value;
     if (JS_VALUE_GET_TAG(val) != JS_TAG_STRING)
-        return NULL;
-    return JS_ToCString(ctx, val);
+        return JS_NULL;
+    JS_DupValue(ctx, val);
+    return val;
 }
 
 #define JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL (1 << 0)
@@ -6458,7 +6459,12 @@ static void build_backtrace(JSContext *ctx, JSValueConst error_obj,
     const char *str1;
     JSObject *p;
     BOOL backtrace_barrier;
+    JSValue traceback;
+    JSValue tb_entry;
+    uint32_t tb_idx;
     
+    traceback = JS_NewArray(ctx);
+    tb_idx = 0;
     js_dbuf_init(ctx, &dbuf);
     if (filename) {
         dbuf_printf(&dbuf, "    at %s", filename);
@@ -6474,11 +6480,15 @@ static void build_backtrace(JSContext *ctx, JSValueConst error_obj,
             goto done;
     }
     for(sf = ctx->rt->current_stack_frame; sf != NULL; sf = sf->prev_frame) {
+        JSValue tb_funcname;
+        JSValue tb_fname;
+        JSValue tb_lineno;
         if (backtrace_flags & JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL) {
             backtrace_flags &= ~JS_BACKTRACE_FLAG_SKIP_FIRST_LEVEL;
             continue;
         }
-        func_name_str = get_func_name(ctx, sf->cur_func);
+        tb_funcname = get_func_name(ctx, sf->cur_func);
+        func_name_str = JS_IsUndefined(tb_funcname) ? NULL : JS_ToCString(ctx, tb_funcname);
         if (!func_name_str || func_name_str[0] == '\0')
             str1 = "<anonymous>";
         else
@@ -6486,10 +6496,14 @@ static void build_backtrace(JSContext *ctx, JSValueConst error_obj,
         dbuf_printf(&dbuf, "    at %s", str1);
         JS_FreeCString(ctx, func_name_str);
 
+        tb_fname = JS_NULL;
+        tb_lineno = JS_NULL;
+
         p = JS_VALUE_GET_OBJ(sf->cur_func);
         backtrace_barrier = FALSE;
         if (js_class_has_bytecode(p->class_id)) {
             JSFunctionBytecode *b;
+            JSValue atom_val;
             const char *atom_str;
             int line_num1;
 
@@ -6498,18 +6512,33 @@ static void build_backtrace(JSContext *ctx, JSValueConst error_obj,
             if (b->has_debug) {
                 line_num1 = find_line_num(ctx, b,
                                           sf->cur_pc - b->byte_code_buf - 1);
-                atom_str = JS_AtomToCString(ctx, b->debug.filename);
+                atom_val = JS_AtomToString(ctx, b->debug.filename);
+                if (JS_IsException(atom_val)) {
+                    atom_str = NULL;
+                } else {
+                    atom_str = JS_ToCString(ctx, atom_val);
+                    tb_fname = atom_val;
+                }
                 dbuf_printf(&dbuf, " (%s",
                             atom_str ? atom_str : "<null>");
                 JS_FreeCString(ctx, atom_str);
-                if (line_num1 != -1)
+                if (line_num1 != -1) {
                     dbuf_printf(&dbuf, ":%d", line_num1);
+                    tb_lineno = JS_NewInt32(ctx, line_num1);
+                }
                 dbuf_putc(&dbuf, ')');
             }
         } else {
             dbuf_printf(&dbuf, " (native)");
         }
         dbuf_putc(&dbuf, '\n');
+
+        tb_entry = JS_NewObject(ctx);
+        JS_DefinePropertyValue(ctx, tb_entry, JS_ATOM_functionName, tb_funcname, JS_PROP_C_W_E);
+        JS_DefinePropertyValue(ctx, tb_entry, JS_ATOM_fileName, tb_fname, JS_PROP_C_W_E);
+        JS_DefinePropertyValue(ctx, tb_entry, JS_ATOM_lineNumber, tb_lineno, JS_PROP_C_W_E);
+        JS_DefinePropertyValueUint32(ctx, traceback, tb_idx++, tb_entry, JS_PROP_C_W_E);
+
         /* stop backtrace if JS_EVAL_FLAG_BACKTRACE_BARRIER was used */
         if (backtrace_barrier)
             break;
@@ -6522,6 +6551,8 @@ static void build_backtrace(JSContext *ctx, JSValueConst error_obj,
         str = JS_NewString(ctx, (char *)dbuf.buf);
     dbuf_free(&dbuf);
     JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_stack, str,
+                           JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
+    JS_DefinePropertyValue(ctx, error_obj, JS_ATOM_traceback, traceback,
                            JS_PROP_WRITABLE | JS_PROP_CONFIGURABLE);
 }
 
