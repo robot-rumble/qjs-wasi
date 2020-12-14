@@ -29,7 +29,7 @@
 #include <assert.h>
 #include <unistd.h>
 #include <errno.h>
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(__wasi__)
 #include <sys/wait.h>
 #endif
 
@@ -374,7 +374,7 @@ void help(void)
     exit(1);
 }
 
-#if defined(CONFIG_CC) && !defined(_WIN32)
+#if defined(CONFIG_CC) && !defined(_WIN32) && !defined(__wasi__)
 
 int exec_cmd(char **argv)
 {
@@ -615,6 +615,9 @@ int main(int argc, char **argv)
 #if defined(_WIN32) || defined(__ANDROID__)
         /* XXX: find a /tmp directory ? */
         snprintf(cfilename, sizeof(cfilename), "out%d.c", getpid());
+#elif defined(__wasi__)
+        /* doesn't matter, can't output executable for wasi anyways */
+        snprintf(cfilename, sizeof(cfilename), "/tmp/out%d.c", 0);
 #else
         snprintf(cfilename, sizeof(cfilename), "/tmp/out%d.c", getpid());
 #endif

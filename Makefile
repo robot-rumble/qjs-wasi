@@ -33,6 +33,8 @@ CONFIG_LTO=y
 #CONFIG_WERROR=y
 # force 32 bit build for some utilities
 #CONFIG_M32=y
+# Build for WASI
+#CONFIG_WASI=y
 
 ifdef CONFIG_DARWIN
 # use clang instead of gcc
@@ -59,13 +61,19 @@ ifdef CONFIG_WIN32
     CROSS_PREFIX=x86_64-w64-mingw32-
   endif
   EXE=.exe
+else ifdef CONFIG_WASI
+  CROSS_PREFIX=wasi
+  EXE=.wasm
+  HOST_CC=cc
+  CONFIG_CLANG=y
+  # QJSC_BYTESWAP=y
 else
   CROSS_PREFIX=
   EXE=
 endif
 ifdef CONFIG_CLANG
-  HOST_CC=clang
-  CC=$(CROSS_PREFIX)clang
+  HOST_CC ?= clang
+  CC=$(CROSS_PREFIX)$(HOST_CC)
   CFLAGS=-g -Wall -MMD -MF $(OBJDIR)/$(@F).d
   CFLAGS += -Wextra
   CFLAGS += -Wno-sign-compare
@@ -152,6 +160,12 @@ ifdef CONFIG_LTO
 PROGS+=libquickjs.lto.a
 endif
 
+ifdef QJSC_BYTESWAP
+  QJSCFLAGS=-x
+else
+  QJSCFLAGS=
+endif
+
 # examples
 ifeq ($(CROSS_PREFIX),)
 ifdef CONFIG_ASAN
@@ -234,10 +248,10 @@ libquickjs.a: $(patsubst %.o, %.nolto.o, $(QJS_LIB_OBJS))
 endif # CONFIG_LTO
 
 repl.c: $(QJSC) repl.js
-	$(QJSC) -c -o $@ -m repl.js
+	$(QJSC) $(QJSCFLAGS) -c -o $@ -m repl.js
 
 qjscalc.c: $(QJSC) qjscalc.js
-	$(QJSC) -fbignum -c -o $@ qjscalc.js
+	$(QJSC) $(QJSCFLAGS) -fbignum -c -o $@ qjscalc.js
 
 ifneq ($(wildcard unicode/UnicodeData.txt),)
 $(OBJDIR)/libunicode.o $(OBJDIR)/libunicode.m32.o $(OBJDIR)/libunicode.m32s.o \
@@ -322,7 +336,7 @@ HELLO_OPTS+=-fno-bigint
 endif
 
 hello.c: $(QJSC) $(HELLO_SRCS)
-	$(QJSC) -e $(HELLO_OPTS) -o $@ $(HELLO_SRCS)
+	$(QJSC) $(QJSCFLAGS) -e $(HELLO_OPTS) -o $@ $(HELLO_SRCS)
 
 ifdef CONFIG_M32
 examples/hello: $(OBJDIR)/hello.m32s.o $(patsubst %.o, %.m32s.o, $(QJS_LIB_OBJS))
@@ -338,12 +352,12 @@ HELLO_MODULE_OPTS=-fno-string-normalize -fno-map -fno-promise -fno-typedarray \
            -fno-typedarray -fno-regexp -fno-json -fno-eval -fno-proxy \
            -fno-date -m
 examples/hello_module: $(QJSC) libquickjs$(LTOEXT).a $(HELLO_MODULE_SRCS)
-	$(QJSC) $(HELLO_MODULE_OPTS) -o $@ $(HELLO_MODULE_SRCS)
+	$(QJSC) $(QJSCFLAGS) $(HELLO_MODULE_OPTS) -o $@ $(HELLO_MODULE_SRCS)
 
 # use of an external C module (static compilation)
 
 test_fib.c: $(QJSC) examples/test_fib.js
-	$(QJSC) -e -M examples/fib.so,fib -m -o $@ examples/test_fib.js
+	$(QJSC) $(QJSCFLAGS) -e -M examples/fib.so,fib -m -o $@ examples/test_fib.js
 
 examples/test_fib: $(OBJDIR)/test_fib.o $(OBJDIR)/examples/fib.o libquickjs$(LTOEXT).a
 	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)

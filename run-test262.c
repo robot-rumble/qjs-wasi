@@ -40,7 +40,7 @@
 #include "quickjs-libc.h"
 
 /* enable test262 thread support to test SharedArrayBuffer and Atomics */
-#define CONFIG_AGENT
+/* #define CONFIG_AGENT */
 
 #define CMD_NAME "run-test262"
 
@@ -352,7 +352,7 @@ void namelist_free(namelist_t *lp)
     lp->size = 0;
 }
 
-static int add_test_file(const char *filename, const struct stat *ptr, int flag)
+static int add_test_file(const char *filename, const struct stat *ptr, int flag, struct FTW* buf)
 {
     namelist_t *lp = &test_list;
     if (has_suffix(filename, ".js") && !has_suffix(filename, "_FIXTURE.js"))
@@ -365,7 +365,7 @@ static void enumerate_tests(const char *path)
 {
     namelist_t *lp = &test_list;
     int start = lp->count;
-    ftw(path, add_test_file, 100);
+    nftw(path, add_test_file, 100, 0);
     qsort(lp->array + start, lp->count - start, sizeof(*lp->array),
           namelist_cmp_indirect);
 }
@@ -438,7 +438,9 @@ typedef struct {
     char *str;
 } AgentReport;
 
+#endif
 static JSValue add_helpers1(JSContext *ctx);
+#ifdef CONFIG_AGENT
 static void add_helpers(JSContext *ctx);
 
 static pthread_mutex_t agent_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -648,12 +650,14 @@ static JSValue js_agent_sleep(JSContext *ctx, JSValue this_val,
     return JS_UNDEFINED;
 }
 
+#endif
 static int64_t get_clock_ms(void)
 {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000 + (ts.tv_nsec / 1000000);
 }
+#ifdef CONFIG_AGENT
 
 static JSValue js_agent_monotonicNow(JSContext *ctx, JSValue this_val,
                                      int argc, JSValue *argv)
