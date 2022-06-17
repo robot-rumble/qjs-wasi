@@ -1,6 +1,6 @@
 /*
  * QuickJS stand alone interpreter
- * 
+ *
  * Copyright (c) 2017-2020 Fabrice Bellard
  * Copyright (c) 2017-2020 Charlie Gordon
  *
@@ -82,7 +82,7 @@ static int eval_file(JSContext *ctx, const char *filename, int module)
     uint8_t *buf;
     int ret, eval_flags;
     size_t buf_len;
-    
+
     buf = js_load_file(ctx, &buf_len, filename);
     if (!buf) {
         perror(filename);
@@ -319,7 +319,7 @@ int main(int argc, char **argv)
     int load_jscalc;
 #endif
     size_t stack_size = 0;
-    
+
 #ifdef CONFIG_BIGNUM
     /* load jscalc runtime if invoked as 'qjscalc' */
     {
@@ -331,7 +331,7 @@ int main(int argc, char **argv)
         load_jscalc = !strcmp(exename, "qjscalc");
     }
 #endif
-    
+
     /* cannot use getopt because we want to pass the command line to
        the script */
     optind = 1;
@@ -463,6 +463,7 @@ int main(int argc, char **argv)
     }
     if (memory_limit != 0)
         JS_SetMemoryLimit(rt, memory_limit);
+    stack_size = 250000000;
     if (stack_size != 0)
         JS_SetMaxStackSize(rt, stack_size);
     js_std_set_worker_new_context_func(JS_NewCustomContext);
@@ -480,7 +481,7 @@ int main(int argc, char **argv)
         JS_SetHostPromiseRejectionTracker(rt, js_std_promise_rejection_tracker,
                                           NULL);
     }
-    
+
     if (!empty_run) {
 #ifdef CONFIG_BIGNUM
         if (load_jscalc) {
@@ -521,7 +522,7 @@ int main(int argc, char **argv)
         }
         js_std_loop(ctx);
     }
-    
+
     if (dump_memory) {
         JSMemoryUsage stats;
         JS_ComputeMemoryUsage(rt, &stats);
